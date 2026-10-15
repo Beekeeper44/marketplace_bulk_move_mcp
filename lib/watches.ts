@@ -2,7 +2,7 @@
 // Search: "tag vookum", "brand rolex", "model datejust", "ref 16030", "movement automatic", "dial blue",
 // "po 4439", "order 20890796", "ac 4229801" — or plain words (each word must match some field).
 import { config } from "./config";
-import { mb } from "./metabase";
+import { mb, getTemplateTags, type TemplateTag } from "./metabase";
 import { watchCardId } from "./settings";
 
 export type WatchRow = {
@@ -81,6 +81,22 @@ export function matchWatch(r: WatchRow, q: ReturnType<typeof parseWatchQuery>) {
   return q.free.every((w) => hay.includes(w));
 }
 
+/** Filters on the question that have a default value — Metabase applies those when the bot runs it,
+ *  so they can quietly cut rows (e.g. a {{holding}} filter with a default). */
+export async function questionDefaults(id: number) {
+  const r = await mb(`/api/card/${id}`);
+  if (!r.ok) return [];
+  const card = await r.json();
+  const out: { name: string; value: unknown }[] = [];
+  const add = (tags: Record<string, { name?: string; default?: unknown }> | undefined) => {
+    for (const [k, v] of Object.entries(tags ?? {})) if (v?.default != null && v.default !== "") out.push({ name: v.name || k, value: v.default });
+  };
+  add(card?.dataset_query?.native?.["template-tags"]);
+  for (const st of card?.dataset_query?.stages ?? []) add(st?.["template-tags"]);
+  for (const p of card?.parameters ?? []) if (p?.default != null && p.default !== "" && !out.some((o) => o.name === p.slug)) out.push({ name: p.slug || p.name, value: p.default });
+  return out;
+}
+
 /** Pull a question's rows once and say whether it has what the bot needs (Setup tab). */
 export async function inspectWatchQuestion(id: number) {
   const res = await mb(`/api/card/${id}/query/json`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parameters: [], format_rows: false }) });
@@ -99,19 +115,64 @@ export async function inspectWatchQuestion(id: number) {
   };
 }
 
-export async function queryWatches(text: string, min?: number | null, max?: number | null) {
-  const id = await watchCardId();
-  if (!id) throw new Error("Watches aren't set up yet: an admin picks the watches question in the Setup tab.");
+// Run the question with some of its {{filters}} filled in. The SQL ends in ORDER BY ac_number DESC LIMIT 5000,
+// so a search has to reach Metabase as a filter — otherwise older watches fall past the limit before the bot sees them.
+async function runQuestion(id: number, values: Record<string, string>) {
+  const tags = await getTemplateTags(id).catch(() => ({} as Record<string, TemplateTag>));
+  const parameters = Object.entries(values).flatMap(([key, v]) => {
+    const tt = tags[key];
+    if (!tt?.id) return [];
+    return [{ id: tt.id, type: tt.ptype || (tt.type === "number" ? "number/=" : "category"), target: ["variable", ["template-tag", key]], value: tt.type === "number" ? [Number(v)] : [v] }];
+  });
   const path = `/api/card/${id}/query/json`;
-  let res = await mb(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parameters: [], format_rows: false }) });
+  let res = await mb(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parameters, format_rows: false }) });
   if (!res.ok && res.status >= 400 && res.status < 500) {
-    res = await mb(path, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ parameters: "[]", format_rows: "false" }).toString() });
+    res = await mb(path, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ parameters: JSON.stringify(parameters), format_rows: "false" }).toString() });
   }
   if (!res.ok) throw new Error(`Metabase watches query failed: ${res.status} ${(await res.text()).slice(0, 300)}`);
   const data = await res.json();
   if (!Array.isArray(data)) throw new Error(`Unexpected Metabase response: ${JSON.stringify(data).slice(0, 300)}`);
-  const all = data.map(toRow);
+  return data as Record<string, unknown>[];
+}
+
+// which {{filter}} on the question takes which search field
+const PARAM_NAMES: Record<string, string[]> = {
+  tag: ["tag", "tags"], brand: ["brand", "brand_name"], model: ["model", "model_name"], po_number: ["po_number", "po"], order_number: ["order_number", "order"], reference: ["reference_number", "reference", "ref"],
+};
+async function paramName(id: number, field: string) {
+  const tags = await getTemplateTags(id).catch(() => ({} as Record<string, TemplateTag>));
+  return (PARAM_NAMES[field] ?? []).find((n) => tags[n]?.id) ?? null;
+}
+
+export async function queryWatches(text: string, min?: number | null, max?: number | null) {
+  const id = await watchCardId();
+  if (!id) throw new Error("Watches aren't set up yet.");
   const q = parseWatchQuery(text);
-  const rows = all.filter((r) => !isRejected(r.status) && matchWatch(r, q) && (min == null || (r.ev ?? 0) >= min) && (max == null || (r.ev ?? 0) <= max));
-  return { rows, total_in_question: all.length, no_id: rows.filter((r) => !r.item_id).length, query: q };
+  // exact numbers go to Metabase as filters (PO, order, reference)
+  const base: Record<string, string> = {};
+  for (const f of q.filters) {
+    if (f.field === "po_number" || f.field === "order_number" || f.field === "reference") {
+      const pn = await paramName(id, f.field);
+      if (pn) base[pn] = f.value;
+    }
+  }
+  // words also go through the question's Tag / Brand / Model filters, so matches past the LIMIT are found:
+  // "vookum" → Tag, "rolex" → Brand, "datejust" → Model ("tag x", "brand x", "model x" go to just that one)
+  const [tagP, brandP, modelP] = await Promise.all([paramName(id, "tag"), paramName(id, "brand"), paramName(id, "model")]);
+  const extra: Record<string, string>[] = [];
+  const add = (p: string | null, v: string) => { if (p && !extra.some((e) => e[p] === v)) extra.push({ [p]: v }); };
+  for (const f of q.filters) { if (f.field === "tag") add(tagP, f.value); if (f.field === "brand") add(brandP, f.value); if (f.field === "model") add(modelP, f.value); }
+  for (const w of q.free.filter((x) => /[a-z]/.test(x) && x.length >= 3).slice(0, 3)) { add(tagP, w); add(brandP, w); add(modelP, w); }
+  const runs = await Promise.all([runQuestion(id, base), ...extra.slice(0, 9).map((e) => runQuestion(id, { ...base, ...e }))]);
+  const seen = new Set<string>();
+  const all: WatchRow[] = [];
+  for (const data of runs) for (const o of data) {
+    const r = toRow(o);
+    const key = r.item_id || `${r.ac}|${r.reference}|${r.tag}`;
+    if (seen.has(key)) continue;
+    seen.add(key); all.push(r);
+  }
+  const rows = all.filter((r) => !isRejected(r.status) && matchWatch(r, q) && (min == null || (r.ev ?? 0) >= min) && (max == null || (r.ev ?? 0) <= max))
+    .sort((a, b) => Number(b.ac ?? 0) - Number(a.ac ?? 0));
+  return { rows, total_in_question: runs[0].length, question_id: id, filtered_in_metabase: extra.length > 0 || Object.keys(base).length > 0, no_id: rows.filter((r) => !r.item_id).length, query: q };
 }

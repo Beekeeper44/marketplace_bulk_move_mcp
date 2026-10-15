@@ -570,7 +570,7 @@ async function find(text){
   catch(e){ if(seq===findSeq) showEmpty(e.message); return; }
   if(seq!==findSeq) return;
   const at=new Date().toLocaleTimeString([], {hour:"numeric",minute:"2-digit",second:"2-digit"});
-  $("#srcCount").textContent=`· ${res.total.toLocaleString()} matching · pulled ${at} (${(res.ms/1000).toFixed(1)}s)`;
+  $("#srcCount").textContent=`· ${res.total.toLocaleString()} matching${res.question_id?` · Metabase ${res.question_id}`:""} · pulled ${at} (${(res.ms/1000).toFixed(1)}s)`;
   const byOrder=!!(res.parsed&&res.parsed.filters&&res.parsed.filters.scope);
   if(CAT!=="watches") $("#srcLabel").textContent=byOrder?"Every card in the order (customers too) · orders question, fresh every search":"All warehouse cards · Metabase 4131, fresh every search";
   if(!res.has_filter){ showEmpty(CAT==="watches"?"Add a tag, brand, model, reference, movement, PO, order or AC number.":"Add at least one filter: a tag, player, set, parallel, grade, value range, order, AC number or cert number."); return; }

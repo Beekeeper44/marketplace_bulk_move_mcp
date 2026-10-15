@@ -19,6 +19,7 @@ import {
   can, actorOf, currentUser, sessionCookie, clearCookie, signIn, needsSetup, setupFirstAdmin, inviteInfo, acceptInvite,
   changePassword, listUsers, addUser, updateUser, relinkAdmin, testAdminLink, resetInvite, type User, type Role,
 } from "@/lib/users";
+const byOrderEarly = (ord: { orders: string[] }) => ord.orders.length > 0;
 
 export const maxDuration = 300;
 
@@ -122,8 +123,9 @@ export async function POST(req: Request, ctx: Ctx) {
         // pasted card rows (set · insert · player + # · parallel · grade) search exactly; anything else is a typed request
         const pasted = parsePasted(rest);
         const tg = pasted ? { tags: [], untagged: false, rest } : readTags(rest);
-        // tag only ("tag sd_wemby_grail"): pull the cards with that tag straight from 4131
-        const tagOnly = !pasted && (tg.tags.length > 0) && !tg.rest;
+        // any tag ("sd_wemby_grail", "sd_wemby_grail psa 10"): the tag goes to 4131's own Tag filter, so cards past
+        // the question's LIMIT aren't missed; other words then narrow those cards
+        const tagOnly = !pasted && !byOrderEarly(ord) && tg.tags.length > 0;
         // order #: every card in that order — customers' too — from the orders question (44123);
         // other words narrow it ("order 1234567 psa 10"). PO on its own: 4131 (warehouse).
         const byOrder = !pasted && ord.orders.length > 0;
@@ -144,8 +146,12 @@ export async function POST(req: Request, ctx: Ctx) {
           ? await (async () => { const t0 = Date.now(); const rows = await queryCards(rangeF);
               return { parsed: { filters: {}, post_filters: {} }, has_filter: true, queries: [rangeF], ms: Date.now() - t0, rows, missing: [] as string[] }; })()
           : tagOnly
-          ? await (async () => { const t0 = Date.now(); const rows = (await Promise.all(tg.tags.map((t) => queryCards({ tag: t, ...rangeF })))).flat();
-              return { parsed: { filters: {}, post_filters: {} }, has_filter: true, queries: tg.tags.map((t) => ({ tag: t })), ms: Date.now() - t0, rows: [...new Map(rows.map((x) => [x.item_id, x])).values()], missing: [] as string[] }; })()
+          ? await (async () => { const t0 = Date.now();
+              const poF = ord.pos.length ? { po_number: ord.pos[0] } : {};
+              let rows = (await Promise.all(tg.tags.map((t) => queryCards({ tag: t, ...rangeF, ...poF })))).flat();
+              rows = [...new Map(rows.map((x) => [x.item_id, x])).values()];
+              if (tg.rest.trim()) rows = filterTasks(rows as unknown as Parameters<typeof filterTasks>[0], tg.rest).rows as unknown as typeof rows;
+              return { parsed: { filters: tg.rest.trim() ? { contains: tg.rest.trim() } : {}, post_filters: {} }, has_filter: true, queries: tg.tags.map((t) => ({ tag: t })), ms: Date.now() - t0, rows, missing: [] as string[] }; })()
           : pasted
           ? await (async () => { const t0 = Date.now(); const p = await searchPasted(pasted);
               return { parsed: { filters: p.display, post_filters: {} }, has_filter: true, queries: p.queries, ms: Date.now() - t0, rows: p.rows, missing: p.missing }; })()
@@ -208,7 +214,7 @@ export async function POST(req: Request, ctx: Ctx) {
         const rangeW = typedW ? { ...(wr.min != null ? { min_estimated_value: wr.min } : {}), ...(wr.max != null ? { max_estimated_value: wr.max } : {}) } : {};
         const LIMIT = 2000;
         const moved = await recentMoves(r.rows.slice(0, LIMIT).map((x) => x.item_id).filter(Boolean)).catch(() => new Map());
-        return json({ ms: Date.now() - t0, total: r.rows.length, has_filter: !!(r.query.filters.length || r.query.free.length || typedW), no_id: r.no_id,
+        return json({ ms: Date.now() - t0, total: r.rows.length, in_question: r.total_in_question, question_id: r.question_id, has_filter: !!(r.query.filters.length || r.query.free.length || typedW), no_id: r.no_id,
           parsed: { filters: [...r.query.filters.map((f) => [f.field, f.value] as [string, string]), ...(r.query.free.length ? [["contains", r.query.free.join(" ")] as [string, string]] : [])]
             .reduce((o, [k, v]) => ({ ...o, [k]: o[k] ? `${o[k]} or ${v}` : v }), { ...rangeW } as Record<string, string | number>), post_filters: {} },
           missing: [], cards: r.rows.slice(0, LIMIT).map((x) => ({ ...x, moved: moved.get(x.item_id) ?? null })) });

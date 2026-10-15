@@ -2,8 +2,8 @@
 // Read-only — nothing here writes to admin.
 import { config } from "./config";
 import { q } from "./db";
-import { mb, queryCards } from "./metabase";
-import { inspectWatchQuestion } from "./watches";
+import { mb, queryCards, questionShape } from "./metabase";
+import { inspectWatchQuestion, questionDefaults } from "./watches";
 import { openAdminSession, headers, url } from "./admin";
 import { mmConfig } from "./market";
 import { watchCardId } from "./settings";
@@ -58,8 +58,22 @@ export async function setupCheck(adminUserId: string, tag?: string) {
     checks.push({ name: "Watches · item IDs", ok: w.ids_found > 0,
       detail: w.ids_found ? `${w.ids_found.toLocaleString()} of ${w.rows.toLocaleString()} have an ID${w.has_item_id ? "" : " (read from ITEM_URL)"} · moves send DELETE …/repacks/warehouse/watch_<ID>`
         : "No item ID in 45046 — add i.ID AS ITEM_ID (public.items.id) to its SQL. ITEM_TYPE_ID is the watch type, not the watch." });
+    const defs = await questionDefaults(wid).catch(() => []);
+    checks.push({ name: "Watches · filter defaults", ok: !defs.length,
+      detail: defs.length ? `These filters have a default, so the bot only gets rows matching them: ${defs.map((d) => `${d.name} = ${JSON.stringify(d.value)}`).join(", ")} — clear the default in Metabase (Variables panel) and Save` : "No filter defaults — the bot gets every row" });
     checks.push({ name: "Watches · hide rejected", ok: !!w.status_col, detail: w.status_col ? `${w.status_col} · values: ${w.statuses.join(", ") || "—"}` : "No status column in 45046 — rejected watches can't be hidden" });
   } catch (e) { checks.push({ name: `Watches · Metabase ${wid}`, ok: false, detail: errMsg(e) }); }
+  // can each search reach the question's own filters? (otherwise only the newest LIMIT rows are searched)
+  for (const [label, qid, need] of [["Cards", config.metabaseCardId(), ["tag", "player_name", "set_name", "po_number"]], ["Watches", wid, ["tag", "brand", "model", "po_number", "order_number"]]] as const) {
+    if (!qid) continue;
+    try {
+      const sh = await questionShape(qid);
+      const has = need.filter((n) => sh.filters.includes(n)), miss = need.filter((n) => !sh.filters.includes(n));
+      checks.push({ name: `${label} · search reaches Metabase ${qid}`, ok: !sh.limit || !miss.includes("tag"),
+        detail: `Filters on the question: ${sh.filters.join(", ") || "none"}${sh.limit ? ` · LIMIT ${sh.limit.toLocaleString()}` : " · no LIMIT"}` +
+          (sh.limit && miss.length ? ` · searches by ${miss.join(", ")} only see the newest ${sh.limit.toLocaleString()} rows — add those {{filters}} to the SQL or raise the LIMIT` : sh.limit ? " · tag searches go through the filter, so the LIMIT doesn't hide anything" : "") });
+    } catch (e) { checks.push({ name: `${label} · search reaches Metabase ${qid}`, ok: false, detail: errMsg(e) }); }
+  }
   const m = mmConfig();
   checks.push({ name: "Move call", ok: !!m.path, detail: `${m.method} ${url(m.path, sampleId || "<ITEM_ID>")}` });
   checks.push({ name: "Mode", ok: true, detail: config.dryRun() ? "DRY_RUN=true — moves are logged, nothing is sent. Set DRY_RUN=false to go live." : "LIVE — moves are sent to admin" });

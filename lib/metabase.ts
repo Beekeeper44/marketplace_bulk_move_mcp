@@ -64,7 +64,7 @@ export type CardRow = {
   owner_email?: string | null; // order-cards question: who owns the card
 };
 
-type TemplateTag = { name: string; type: string; id?: string; ptype?: string };
+export type TemplateTag = { name: string; type: string; id?: string; ptype?: string };
 let tagCache: { at: number; tags: Record<string, TemplateTag> } | null = null;
 const tagCacheBy = new Map<number, { at: number; tags: Record<string, TemplateTag> }>();
 
@@ -78,7 +78,18 @@ export async function mb(path: string, init: RequestInit = {}) {
 
 // Which {{filters}} does the saved question have? Metabase reports them in different places depending on
 // version, so read all of them: native template-tags, per-stage template-tags, and the card's parameters.
-async function getTemplateTags(cardId: number = config.metabaseCardId()): Promise<Record<string, TemplateTag>> {
+/** A saved question's {{filters}} and its LIMIT — searches that can't go through a filter only see LIMIT rows. */
+export async function questionShape(cardId: number) {
+  const res = await mb(`/api/card/${cardId}`);
+  if (!res.ok) throw new Error(`Metabase card fetch failed: ${res.status}`);
+  const card = await res.json();
+  const sql: string = card?.dataset_query?.native?.query ?? card?.dataset_query?.stages?.[0]?.native ?? "";
+  const lim = [...String(sql).matchAll(/\blimit\s+(\d+)/gi)].pop();
+  const tags = Object.keys(await getTemplateTags(cardId));
+  return { name: card?.name as string, limit: lim ? Number(lim[1]) : null, filters: tags };
+}
+
+export async function getTemplateTags(cardId: number = config.metabaseCardId()): Promise<Record<string, TemplateTag>> {
   const cached = cardId === config.metabaseCardId() ? tagCache : tagCacheBy.get(cardId) ?? null;
   if (cached && Date.now() - cached.at < 60 * 1000) return cached.tags;
   const res = await mb(`/api/card/${cardId}`);
