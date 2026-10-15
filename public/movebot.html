@@ -282,8 +282,10 @@ h1.brand{margin:0}
 .wslab .lbl .wb{max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .wslab .lbl .wr{max-width:100%;overflow:hidden;text-overflow:ellipsis;font-weight:600;opacity:.85}
 .wslab .lbl .wr.long{font-size:9.5px;letter-spacing:-.02em}
-.wslab .art img{background:#fff;padding:6px}
-.wslab .art{background:var(--panel2);font-size:40px}
+/* watch photos sit straight on the tile — no backdrop */
+.wslab .art img{background:transparent;padding:6px}
+.wslab .art{background:transparent;font-size:40px}
+.wslab{background:transparent;border-color:transparent}
 .wbrand{font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--go);margin-top:2px}
 .wspec{display:grid;grid-template-columns:76px minmax(0,1fr);gap:3px 10px;margin:6px 0 4px;font-size:12px;text-align:left}
 .wspec dt{color:var(--dim)}
@@ -390,6 +392,7 @@ dialog h2{margin:0 0 8px;font-size:17px}
 dialog .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 #input::placeholder{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#info .pic:has(img[src*="watch_"]),#info .pic img{background:transparent}
 </style>
 </head>
 <body>
