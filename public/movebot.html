@@ -268,7 +268,10 @@ body.cl-off .evform.evrow,body.cl-off .evform.evurl,body.cl-off .evform.evnote{g
 body.cl-off .evform.evurl > label,body.cl-off .evform.evnote > label{grid-column:1 / -1}
 .titlerow{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 h1.brand{display:flex;align-items:center;gap:10px;letter-spacing:.02em}
-h1.brand .robot{height:112px;width:auto;flex:none;margin:0;display:block}
+h1.brand .robot{height:112px;width:auto;flex:none;margin:0;display:block;transition:filter .3s}
+/* light mode: dark robot (white robot inverted, teal kept) */
+:root[data-theme="light"] .robot{filter:invert(1) hue-rotate(180deg)}
+@media (prefers-color-scheme: light){ :root:not([data-theme="dark"]) .robot{filter:invert(1) hue-rotate(180deg)} }
 .robotbtn{all:unset;cursor:pointer;border-radius:14px;transition:transform .15s,filter .15s}
 .robotbtn:hover{transform:scale(1.04);filter:drop-shadow(0 0 10px var(--go))}
 .robotbtn:focus-visible{outline:2px solid var(--go);outline-offset:3px}
