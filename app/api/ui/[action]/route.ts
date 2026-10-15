@@ -1,6 +1,9 @@
 // JSON API for the Marketplace Move Bot screen. Everything except sign-in/setup/invites needs a signed-in account.
 import { config } from "@/lib/config";
 import { setupCheck } from "@/lib/setup";
+import { queryWatches, isRejected, inspectWatchQuestion } from "@/lib/watches";
+import { watchCardId, setSetting } from "@/lib/settings";
+import { mb } from "@/lib/metabase";
 import { moveCards, recentMoves, listMoveRuns, probeMove, mmConfig, type MoveItem } from "@/lib/market";
 import { filterTasks } from "@/lib/tasks";
 import { listPrompts, addPrompt, renamePrompt, deletePrompt } from "@/lib/ui";
@@ -156,7 +159,7 @@ export async function POST(req: Request, ctx: Ctx) {
             })();
         // tag filter on top of whatever else was typed
         const bareN = (x: unknown) => String(x ?? "").replace(/^#/, "").trim().toLowerCase();
-        const tagRows = r0.rows.filter((x) => hasTag(x.tag, tg.tags) && (!tg.untagged || !x.tag)
+        const tagRows = r0.rows.filter((x) => !isRejected(x.item_status) && hasTag(x.tag, tg.tags) && (!tg.untagged || !x.tag)
           && (!ord.orders.length || ord.orders.some((o) => bareN(x.order_number) === bareN(o)))
           && (!ord.pos.length || ord.pos.some((p) => bareN(x.po_number) === bareN(p)))
           && (evMin == null || (x.estimated_value ?? 0) >= evMin) && (evMax == null || (x.estimated_value ?? 0) <= evMax)
@@ -194,7 +197,41 @@ export async function POST(req: Request, ctx: Ctx) {
       }
       case "move":
         // Move to Marketplace — the only admin write in this app
-        return forbid(u, "editor") ?? json(await moveCards({ items: (Array.isArray(body.items) ? body.items : []) as MoveItem[], actor: actorOf(u), dry_run: body.dry_run === true }));
+        return forbid(u, "editor") ?? json(await moveCards({ items: (Array.isArray(body.items) ? body.items : []) as MoveItem[], actor: actorOf(u), dry_run: body.dry_run === true, category: body.category === "watches" ? "watches" : "cards" }));
+      case "find-watches": {
+        const t0 = Date.now();
+        const nn = (v: unknown) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+        // a typed range ("$100-$250", "under $500", "$5k+") wins over the range tab
+        const wr = readEvRange(str("text"));
+        const typedW = wr.min != null || wr.max != null;
+        const r = await queryWatches(wr.rest, typedW ? wr.min : nn(body.min_ev), typedW ? wr.max : nn(body.max_ev));
+        const rangeW = typedW ? { ...(wr.min != null ? { min_estimated_value: wr.min } : {}), ...(wr.max != null ? { max_estimated_value: wr.max } : {}) } : {};
+        const LIMIT = 2000;
+        const moved = await recentMoves(r.rows.slice(0, LIMIT).map((x) => x.item_id).filter(Boolean)).catch(() => new Map());
+        return json({ ms: Date.now() - t0, total: r.rows.length, has_filter: !!(r.query.filters.length || r.query.free.length || typedW), no_id: r.no_id,
+          parsed: { filters: [...r.query.filters.map((f) => [f.field, f.value] as [string, string]), ...(r.query.free.length ? [["contains", r.query.free.join(" ")] as [string, string]] : [])]
+            .reduce((o, [k, v]) => ({ ...o, [k]: o[k] ? `${o[k]} or ${v}` : v }), { ...rangeW } as Record<string, string | number>), post_filters: {} },
+          missing: [], cards: r.rows.slice(0, LIMIT).map((x) => ({ ...x, moved: moved.get(x.item_id) ?? null })) });
+      }
+      case "mb-search": {
+        // Setup tab: find saved Metabase questions by name
+        const no = forbid(u, "admin"); if (no) return no;
+        const term = str("q") || "watch";
+        const r = await mb(`/api/search?q=${encodeURIComponent(term)}&models=card`);
+        if (!r.ok) throw new Error(`Metabase search failed: ${r.status}`);
+        const j = await r.json();
+        const list = (Array.isArray(j) ? j : j.data ?? []) as { id: number; name: string; collection?: { name?: string } }[];
+        return json({ current: await watchCardId(), results: list.slice(0, 15).map((x) => ({ id: x.id, name: x.name, collection: x.collection?.name ?? "" })) });
+      }
+      case "watch-question": {
+        // Setup tab: check a question and (save=true) use it for watches
+        const no = forbid(u, "admin"); if (no) return no;
+        const id = Number(str("id").replace(/\D/g, ""));
+        if (!id) throw new Error("Enter the question number.");
+        const info = await inspectWatchQuestion(id);
+        if (body.save === true) await setSetting("watch_card_id", String(id), u.name);
+        return json({ id, saved: body.save === true, ...info });
+      }
       case "setup-check":
         return forbid(u, "admin") ?? json(await setupCheck(actorOf(u).session_user_id, str("tag").replace(/^tag\s+/i, "").replace(/^#/, "") || undefined));
       case "probe":

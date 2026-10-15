@@ -50,6 +50,12 @@ env vars · Neon · Metabase 4131 · admin login (repack warehouse) · the tag's
 2. Vercel → Settings → Environment Variables → `DRY_RUN` = `false` → **Deployments → ⋯ → Redeploy**.
 3. Move 1–2 cards, check them on the marketplace in admin. Run the same search again — they show "Moved … by …" and start unselected.
 
+## 6b. Watches
+1. Save the watches SQL as a Metabase question. It needs `ITEM_ID` (= `public.items.id`, not ITEM_TYPE_ID) and ideally a status column (`ITEM_STATUS` / `STATUS`) so rejected watches are hidden.
+2. App → **Setup** tab → **Find the watches question** → **Search Metabase** (e.g. "watch") → **Check** → **Use for watches**. Saved in the app — no Vercel change. (`WATCH_CARD_ID` in Vercel still works and wins.)
+3. Moves send `DELETE /admin/v1/repacks/warehouse/watch_<ITEM_ID>` (confirmed from admin's Timebox warehouse).
+4. Click **Watches** → Tag `vookum`, or **Anything** → `rolex datejust ref #16030`. Dry run first.
+
 ## 7. Team
 **Users** tab (admins): **Add person** → send the invite link. With the shared ev-bot database, everyone already in ev-bot can sign in.
 If someone gets "admin refused this login": Users → **link by admin email** → **test**.

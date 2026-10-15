@@ -22,6 +22,8 @@ export const config = {
   metabaseCardId: () => num("METABASE_CARD_ID", 4131),
   // order searches ("order 1234567"): every card in the order, customers' too
   ordersCardId: () => num("EV_ORDERS_CARD_ID", 44123),
+  // watches: the warehouse-watches question (brand, model, reference, movement…)
+  watchCardId: () => num("WATCH_CARD_ID", 0),
 
   // Admin (writes)
   adminApiUrl: () => (process.env.ADMIN_API_URL || "https://admin-api.arenaclub.com").replace(/\/+$/, ""),

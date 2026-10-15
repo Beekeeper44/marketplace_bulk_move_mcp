@@ -5,6 +5,7 @@ import { q } from "./db";
 import { mb, queryCards } from "./metabase";
 import { openAdminSession, headers, url } from "./admin";
 import { mmConfig } from "./market";
+import { watchCardId } from "./settings";
 
 type Check = { name: string; ok: boolean; detail: string };
 const REQUIRED = ["SESSION_SECRET", "METABASE_HOST", "METABASE_API_KEY", "SUPERTOKENS_CONNECTION_URI", "SUPERTOKENS_API_KEY", "ADMIN_SESSION_USER_ID", "DATABASE_URL"];
@@ -31,6 +32,9 @@ export async function setupCheck(adminUserId: string, tag?: string) {
     try {
       const r = await fetch(url("/admin/v1/repacks/warehouse?category=card&limit=1"), { headers: headers(s.accessToken) });
       checks.push({ name: "Admin login (repack warehouse)", ok: r.ok, detail: r.ok ? "Admin accepts your login for the repack warehouse" : `HTTP ${r.status} ${(await r.text()).slice(0, 120)}` });
+      // the Timebox (watch) warehouse — admin's own list call: /repacks/warehouse?category=watch
+      const w = await fetch(url("/admin/v1/repacks/warehouse?category=watch&limit=1"), { headers: headers(s.accessToken) });
+      checks.push({ name: "Admin login (Timebox watch warehouse)", ok: w.ok, detail: w.ok ? "Admin accepts your login for the watch warehouse" : `HTTP ${w.status} ${(await w.text()).slice(0, 120)}` });
       if (tag) {
         // the tag's cards from 4131, then the first few checked in admin's repack warehouse
         const rows = await queryCards({ tag: tag.trim() });
@@ -45,6 +49,12 @@ export async function setupCheck(adminUserId: string, tag?: string) {
     } finally { await s.revoke(); }
   } catch (e) { checks.push({ name: "Admin login (repack warehouse)", ok: false, detail: errMsg(e) }); }
 
+  const wid = await watchCardId().catch(() => 0);
+  if (!wid) checks.push({ name: "Watches question", ok: false, detail: "Not picked yet — use “Find the watches question” below" });
+  else try {
+    const r = await mb(`/api/card/${wid}`); const j = r.ok ? await r.json() : null;
+    checks.push({ name: `Watches question ${wid}`, ok: r.ok, detail: r.ok ? `Reachable · “${j?.name ?? "?"}” · moves send ${mmConfig("watches").method} ${url(mmConfig("watches").path, "<WATCH_ID>")}` : `HTTP ${r.status}` });
+  } catch (e) { checks.push({ name: `Watches question ${wid}`, ok: false, detail: errMsg(e) }); }
   const m = mmConfig();
   checks.push({ name: "Move call", ok: !!m.path, detail: `${m.method} ${url(m.path, sampleId || "<ITEM_ID>")}` });
   checks.push({ name: "Mode", ok: true, detail: config.dryRun() ? "DRY_RUN=true — moves are logged, nothing is sent. Set DRY_RUN=false to go live." : "LIVE — moves are sent to admin" });

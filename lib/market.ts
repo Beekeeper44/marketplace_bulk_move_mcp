@@ -12,13 +12,15 @@ import type { Actor } from "./users";
 import { q } from "./db";
 
 export type MoveItem = { item_id: string; ev?: number | null; label?: string | null };
+export type Category = "cards" | "watches";
 export type MoveResult = { item_id: string; ok: boolean; status: number; error?: string };
 
 const ID_RE = /^[0-9a-f-]{36}$/i;
 
-export const mmConfig = () => ({
+// watches use the same admin call with watch_ in place of card_ (MM_WATCH_PATH to change it)
+export const mmConfig = (cat: Category = "cards") => ({
   method: (process.env.MM_METHOD || "DELETE").toUpperCase(),
-  path: process.env.MM_PATH || "/admin/v1/repacks/warehouse/card_{id}",
+  path: cat === "watches" ? process.env.MM_WATCH_PATH || "/admin/v1/repacks/warehouse/watch_{id}" : process.env.MM_PATH || "/admin/v1/repacks/warehouse/card_{id}",
   body: process.env.MM_BODY || "",
   batch: Math.max(1, Number(process.env.MM_BATCH) || 50),
 });
@@ -36,8 +38,8 @@ function fill(t: unknown, v: { id?: string; ids?: string[]; ev?: number | null }
   return t;
 }
 
-export function buildCalls(items: MoveItem[]) {
-  const c = mmConfig();
+export function buildCalls(items: MoveItem[], cat: Category = "cards") {
+  const c = mmConfig(cat);
   if (!c.path) throw new Error("Move to Marketplace isn't wired yet: set MM_PATH (and MM_METHOD / MM_BODY) in Vercel from admin's network call.");
   let tpl: unknown = undefined;
   if (c.body) {
@@ -74,13 +76,14 @@ async function send(session: AdminSession, call: { method: string; url: string; 
 }
 
 /** Moves the cards. Dry run = builds the calls and logs them, sends nothing. */
-export async function moveCards(input: { items: MoveItem[]; actor: Actor; dry_run?: boolean }) {
+export async function moveCards(input: { items: MoveItem[]; actor: Actor; dry_run?: boolean; category?: Category }) {
+  const cat: Category = input.category === "watches" ? "watches" : "cards";
   const items = [...new Map(input.items.filter((x) => ID_RE.test(x.item_id)).map((x) => [x.item_id, x])).values()];
-  if (!items.length) throw new Error("Select at least one card.");
+  if (!items.length) throw new Error(cat === "watches" ? "Select at least one watch." : "Select at least one card.");
   if (items.length > config.maxItemsPerRun()) throw new Error(`Max ${config.maxItemsPerRun()} cards per request (the screen batches bigger jobs).`);
   const dry = config.dryRun() || input.dry_run === true;
-  const calls = buildCalls(items);
-  const run_id = "mm_" + randomBytes(5).toString("hex");
+  const calls = buildCalls(items, cat);
+  const run_id = (cat === "watches" ? "mw_" : "mm_") + randomBytes(5).toString("hex");
   const results: MoveResult[] = [];
 
   if (dry) {

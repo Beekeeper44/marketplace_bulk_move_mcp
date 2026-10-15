@@ -103,6 +103,7 @@ async function ensureSchema() {
           by_id        text,
           created_at   timestamptz NOT NULL DEFAULT now()
         )`);
+      await s.query(`CREATE TABLE IF NOT EXISTS mm_settings (key text PRIMARY KEY, value text, updated_by text, updated_at timestamptz NOT NULL DEFAULT now())`);
       await s.query(`CREATE INDEX IF NOT EXISTS mm_moves_item ON mm_moves (item_id, created_at DESC)`);
       await s.query(`
         CREATE TABLE IF NOT EXISTS ev_saved_prompts (
