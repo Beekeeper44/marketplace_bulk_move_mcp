@@ -277,12 +277,19 @@ h1.brand .robot{height:112px;width:auto;flex:none;margin:0;display:block;transit
 .robotbtn:focus-visible{outline:2px solid var(--go);outline-offset:3px}
 .robotbtn:active{transform:scale(.96)}
 h1.brand{margin:0}
+/* watch label: brand on row 1, ref on row 2 */
+.wslab .lbl{flex-direction:column;align-items:center;justify-content:center;gap:1px;white-space:nowrap;min-width:0;line-height:1.25}
+.wslab .lbl .wb{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.wslab .lbl .wr{max-width:100%;overflow:hidden;text-overflow:ellipsis;font-weight:600;opacity:.85}
+.wslab .lbl .wr.long{font-size:9.5px;letter-spacing:-.02em}
 .wslab .art img{background:#fff;padding:6px}
 .wslab .art{background:var(--panel2);font-size:40px}
-.wbrand{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--go);margin-top:2px}
-.wspec{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:6px 0 4px;font-size:12px;text-align:left}
+.wbrand{font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--go);margin-top:2px}
+.wspec{display:grid;grid-template-columns:76px minmax(0,1fr);gap:3px 10px;margin:6px 0 4px;font-size:12px;text-align:left}
 .wspec dt{color:var(--dim)}
-.wspec dd{margin:0;text-transform:capitalize;overflow-wrap:anywhere}
+.wspec dd{margin:0;text-transform:capitalize;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.wspec dt,.wspec dd{line-height:20px;height:20px}
+.wname{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;min-height:calc(3 * 1.3em);line-height:1.3em}
 .wfacts{border-top:1px solid var(--line);padding-top:6px;margin-top:6px}
 .wfacts dd{text-transform:none}
 .wimg{aspect-ratio:3/4;display:grid;place-items:center;border-radius:8px;background:var(--panel2);overflow:hidden;font-size:42px;margin-bottom:8px}
@@ -382,6 +389,7 @@ dialog.info::backdrop{background:#000c}
 dialog h2{margin:0 0 8px;font-size:17px}
 dialog .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
+#input::placeholder{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 </head>
 <body>
@@ -414,7 +422,7 @@ dialog .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
     </div>
     <div class="dim small" id="searchHint" style="margin-bottom:6px">Search anything: tag, player, set, order #, PO #, AC / cert, $100-$250</div>
     <form class="ask" id="form" autocomplete="off">
-      <textarea rows="1" id="input" aria-label="Which cards? Search by tag, player, set, order or AC / cert number." placeholder="sd_wemby_grail · wembanyama prizm · order #1234567 · po #4386 · $100-$250"></textarea>
+      <textarea rows="1" id="input" aria-label="Which cards? Search by tag, player, set, order or AC / cert number." placeholder="sd_wemby_grail · wembanyama prizm · po #4386 · $100-$250"></textarea>
       <button class="btn mic" type="button" id="micBtn" aria-pressed="false" title="Use your voice instead of typing">🎤<span class="mictxt"> Voice</span></button>
       <button class="btn" type="button" id="saveBtn">Save prompt</button>
       <button class="btn primary" type="submit" id="findBtn">Find cards</button>
@@ -667,6 +675,7 @@ function tile(r){
     <div class="tagchange">${change}</div>
   </button></div>`;
 }
+const titleCase=v=>String(v||"").toLowerCase().replace(/(^|[\s-])([a-z])/g,(m,a,b)=>a+b.toUpperCase()); // "ROLEX" / "rolex" → "Rolex"
 const watchModel=r=>{const m=String(r.model||"").trim(), b=String(r.brand||"").trim(); return b&&m.toLowerCase().startsWith(b.toLowerCase()+" ")?m.slice(b.length).trim():m;};
 const watchKey=r=>[r.brand,watchModel(r),r.reference?"ref "+r.reference:""].filter(Boolean).join(" · ");
 function watchTile(r){
@@ -677,7 +686,7 @@ function watchTile(r){
   }else if(S.phase==="working"&&on) change=`<span class="dim">moving…</span>`;
   else if(!canMove) change=`<span class="pill big">no item ID</span>`;
   const spec=[r.dial_color&&`${esc(r.dial_color)} dial`,r.movement&&esc(r.movement),r.case_diameter&&`${esc(r.case_diameter)}mm`,r.case_material&&esc(r.case_material)].filter(Boolean).join(" · ");
-  const kv=(k,v)=>v?`<dt>${k}</dt><dd>${v}</dd>`:"";
+  const kv=(k,v)=>`<dt>${k}</dt><dd>${v||"<span class=\"dim\">—</span>"}</dd>`;
   const facts=[
     kv("Ref",r.reference?copyVal(r.reference,"reference")+copyBtn(r.reference,"reference"):""),
     kv("Tag",r.tag?`<b>${esc(r.tag)}</b>`:""),
@@ -687,12 +696,12 @@ function watchTile(r){
   ].join("");
   return `<div class="tw"><button type="button" class="infob" data-info="${esc(r.item_id)}" aria-label="Details for ${esc(watchKey(r))}" title="Details">i</button><button type="button" class="tile" data-id="${r.item_id}" aria-pressed="${on}" ${S.phase!=="review"||!canMove?"disabled":""} aria-label="${esc(watchKey(r))}">
     <span class="check" aria-hidden="true">${on?"✓":""}</span>
-    <div class="slab wslab"><div class="lbl"><span>${esc(String(r.brand||"").toUpperCase())}</span><span>${r.reference?"REF "+esc(r.reference):""}</span></div>
+    <div class="slab wslab"><div class="lbl"><span class="wb">${esc(titleCase(r.brand))}</span><span class="wr${String(r.reference||"").length>8?" long":""}" title="${esc(r.reference||"")}">${r.reference?"Ref "+esc(r.reference):""}</span></div>
       <div class="art">⌚${r.img?`<img src="${esc(r.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:""}</div></div>
-    ${r.brand?`<div class="wbrand">${esc(r.brand)}</div>`:""}
-    <div class="name">${esc(watchModel(r)||"(no model)")}</div>
+    ${r.brand?`<div class="wbrand">${esc(titleCase(r.brand))}</div>`:""}
+    <div class="name wname" title="${esc(watchModel(r)||"")}">${esc(watchModel(r)||"(no model)")}</div>
     <dl class="wspec">${[["Dial",r.dial_color],["Movement",r.movement],["Case",[r.case_diameter&&String(r.case_diameter).replace(/\s*mm$/i,"")+"mm",r.case_material].filter(Boolean).join(" · ")],["Bracelet",[r.bracelet_material,r.bracelet_color].filter(Boolean).join(" · ")],["Gender",r.gender],["Condition",r.condition],["Box",r.box],["Papers",r.papers]]
-      .filter(([,v])=>v).map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
+      .map(([k,v])=>`<dt>${k}</dt><dd title="${esc(v||"")}">${v?esc(v):"<span class=\"dim\">—</span>"}</dd>`).join("")}</dl>
     <div class="row"><span class="dim">AC ${copyVal(r.ac,"AC number")}${copyBtn(r.ac,"AC number")}</span><span class="ev">${money2(r.ev)}</span></div>
     ${facts?`<dl class="wspec wfacts">${facts}</dl>`:""}
     ${r.moved&&S.phase==="review"?`<div class="pend">Moved ${dayOf(r.moved.at)} by ${esc(r.moved.by)}</div>`:""}
@@ -883,8 +892,8 @@ $("#savedList").addEventListener("click",async e=>{
 
 /* Search by Tag (default): every word or comma-separated entry is a tag. Anything: the full ev-bot search. */
 let MODE="any"; // one box: tags, names, numbers and $ ranges all work together
-const PHS={cards:{any:"sd_wemby_grail · wembanyama prizm · order #1234567 · po #4386 · $100-$250"},
-  watches:{any:"vookum · rolex · datejust ref #16030 · movement automatic · order #20890796 · $100-$250"}};
+const PHS={cards:{any:"sd_wemby_grail · wembanyama prizm · po #4386 · $100-$250"},
+  watches:{any:"vookum · rolex datejust · ref #16030 · $100-$250"}};
 const PH=new Proxy({}, {get:(_,k)=>PHS[typeof CAT==="undefined"?"cards":CAT][k]});
 let ONE="card", MANY="cards";
 document.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>{MODE=b.dataset.mode;
