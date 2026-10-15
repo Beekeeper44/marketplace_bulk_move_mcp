@@ -279,6 +279,12 @@ h1.brand .robot{height:112px;width:auto;flex:none;margin:0;display:block;transit
 h1.brand{margin:0}
 .wslab .art img{background:#fff;padding:6px}
 .wslab .art{background:var(--panel2);font-size:40px}
+.wbrand{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--go);margin-top:2px}
+.wspec{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:6px 0 4px;font-size:12px;text-align:left}
+.wspec dt{color:var(--dim)}
+.wspec dd{margin:0;text-transform:capitalize;overflow-wrap:anywhere}
+.wfacts{border-top:1px solid var(--line);padding-top:6px;margin-top:6px}
+.wfacts dd{text-transform:none}
 .wimg{aspect-ratio:3/4;display:grid;place-items:center;border-radius:8px;background:var(--panel2);overflow:hidden;font-size:42px;margin-bottom:8px}
 .wimg img{max-width:100%;max-height:100%;object-fit:contain}
 .brandcol{display:flex;align-items:center;gap:18px;height:112px}
@@ -406,11 +412,9 @@ dialog .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
       </div>
       <div id="srcMsg" class="small" aria-live="polite"></div>
     </div>
-    <div class="bands" role="group" aria-label="Search by" style="margin-bottom:6px"><span class="dim small">Search by</span>
-      <button type="button" class="band" data-mode="tag" aria-pressed="true">Tag</button>
-      <button type="button" class="band" data-mode="any" aria-pressed="false" id="anyBtn">Anything (player, set, order, AC, cert)</button></div>
+    <div class="dim small" id="searchHint" style="margin-bottom:6px">Search anything: tag, player, set, order #, PO #, AC / cert, $100-$250</div>
     <form class="ask" id="form" autocomplete="off">
-      <textarea rows="1" id="input" aria-label="Which cards? Search by tag, player, set, order or AC / cert number." placeholder="Tag, e.g. sd_wemby_grail — several tags: separate with commas"></textarea>
+      <textarea rows="1" id="input" aria-label="Which cards? Search by tag, player, set, order or AC / cert number." placeholder="sd_wemby_grail · wembanyama prizm · order #1234567 · po #4386 · $100-$250"></textarea>
       <button class="btn mic" type="button" id="micBtn" aria-pressed="false" title="Use your voice instead of typing">🎤<span class="mictxt"> Voice</span></button>
       <button class="btn" type="button" id="saveBtn">Save prompt</button>
       <button class="btn primary" type="submit" id="findBtn">Find cards</button>
@@ -542,7 +546,7 @@ function arenaSlab(r){
 let S=null; // {matched, rows, total, filters, selected:Set, phase:'review'|'working'|'done', page, lastText, result}
 let findSeq=0;
 const PAGE=200;
-const EMPTY_HELP=`Type a <b>tag</b> (e.g. <b>sd_wemby_grail</b>) and press Enter. Select the cards, then <b>Move to Marketplace</b>. Add a dollar range like <b>$100-$250</b>. Switch to <b>Anything</b> for player, set, <b>order #1234567</b>, <b>ref #16030</b> (watches) or AC / cert.`;
+const EMPTY_HELP=`Type a tag, name or number (e.g. <b>sd_wemby_grail</b>) and press Enter. Select the cards, then <b>Move to Marketplace</b>. Add a dollar range like <b>$100-$250</b>. Mix them: <b>rolex ref #16030</b>, <b>order #1234567</b>.`;
 
 /* EV range tabs: filter what's on screen; the picked tab also goes with the next search */
 const BANDS=[{id:"all",label:"All"},{id:"u500",label:"<$499",max:499.99},{id:"500",label:"$500–$999",min:500,max:999.99},{id:"1k",label:"$1,000–$2,499",min:1000,max:2499.99},{id:"2500",label:"$2,500–$4,999",min:2500,max:4999.99},{id:"5k",label:"$5,000+",min:5000}];
@@ -559,7 +563,7 @@ function sortRows(rows){
 async function find(text){
   if(!text.trim()) return;
   const seq=++findSeq;
-  $("#empty").hidden=false; $("#empty").innerHTML=`<span class="spin"></span>Searching Metabase 4131…`; $("#summary").innerHTML=""; $("#grid").innerHTML=""; $("#bar").hidden=true;
+  $("#empty").hidden=false; $("#empty").innerHTML=`<span class="spin"></span>Searching Metabase ${CAT==="watches"?"45046 (watches)":"4131 (cards)"}…`; $("#summary").innerHTML=""; $("#grid").innerHTML=""; $("#bar").hidden=true;
   const B=BANDS.find(x=>x.id===BAND)||BANDS[0];
   let res;
   try{ res=await api(CAT==="watches"?"find-watches":"find",{text,min_ev:B.min??null,max_ev:B.max??null}); }
@@ -663,7 +667,8 @@ function tile(r){
     <div class="tagchange">${change}</div>
   </button></div>`;
 }
-const watchKey=r=>[r.brand,r.model,r.reference?"ref "+r.reference:""].filter(Boolean).join(" · ");
+const watchModel=r=>{const m=String(r.model||"").trim(), b=String(r.brand||"").trim(); return b&&m.toLowerCase().startsWith(b.toLowerCase()+" ")?m.slice(b.length).trim():m;};
+const watchKey=r=>[r.brand,watchModel(r),r.reference?"ref "+r.reference:""].filter(Boolean).join(" · ");
 function watchTile(r){
   const on=S.selected.has(r.item_id), canMove=!!r.item_id;
   let change="";
@@ -672,24 +677,24 @@ function watchTile(r){
   }else if(S.phase==="working"&&on) change=`<span class="dim">moving…</span>`;
   else if(!canMove) change=`<span class="pill big">no item ID</span>`;
   const spec=[r.dial_color&&`${esc(r.dial_color)} dial`,r.movement&&esc(r.movement),r.case_diameter&&`${esc(r.case_diameter)}mm`,r.case_material&&esc(r.case_material)].filter(Boolean).join(" · ");
+  const kv=(k,v)=>v?`<dt>${k}</dt><dd>${v}</dd>`:"";
   const facts=[
-    r.reference?`Ref ${copyVal(r.reference,"reference")}${copyBtn(r.reference,"reference")}`:"",
-    r.bracelet_material?`Bracelet <b>${esc(r.bracelet_material)}${r.bracelet_color?" · "+esc(r.bracelet_color):""}</b>`:"",
-    r.condition?`Condition <b>${esc(r.condition)}</b>`:"",
-    (r.box||r.papers)?`<b>${esc(r.box||"no box")}</b> · <b>${esc(r.papers||"no papers")}</b>`:"",
-    r.tag?`Tag <b>${esc(r.tag)}</b>`:"",
-    r.po_number?`PO ${copyVal(r.po_number,"PO")}${copyBtn(r.po_number,"PO")}`:"",
-    r.order_number?`Order ${copyVal(r.order_number,"order number")}${copyBtn(r.order_number,"order number")}`:"",
-    r.purchase_cost!=null?`Cost <b>${money2(r.purchase_cost)}</b>`:"",
-  ].filter(Boolean).join("<br>");
+    kv("Ref",r.reference?copyVal(r.reference,"reference")+copyBtn(r.reference,"reference"):""),
+    kv("Tag",r.tag?`<b>${esc(r.tag)}</b>`:""),
+    kv("PO",r.po_number?copyVal(r.po_number,"PO")+copyBtn(r.po_number,"PO"):""),
+    kv("Order",r.order_number?copyVal(r.order_number,"order number")+copyBtn(r.order_number,"order number"):""),
+    kv("Cost",r.purchase_cost!=null?`<b>${money2(r.purchase_cost)}</b>`:""),
+  ].join("");
   return `<div class="tw"><button type="button" class="infob" data-info="${esc(r.item_id)}" aria-label="Details for ${esc(watchKey(r))}" title="Details">i</button><button type="button" class="tile" data-id="${r.item_id}" aria-pressed="${on}" ${S.phase!=="review"||!canMove?"disabled":""} aria-label="${esc(watchKey(r))}">
     <span class="check" aria-hidden="true">${on?"✓":""}</span>
     <div class="slab wslab"><div class="lbl"><span>${esc(String(r.brand||"").toUpperCase())}</span><span>${r.reference?"REF "+esc(r.reference):""}</span></div>
       <div class="art">⌚${r.img?`<img src="${esc(r.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:""}</div></div>
-    <div class="name">${esc([r.brand,r.model].filter(Boolean).join(" ")||"(no model)")}</div>
-    <div class="meta">${spec}${r.gender?"<br>"+esc(r.gender):""}</div>
+    ${r.brand?`<div class="wbrand">${esc(r.brand)}</div>`:""}
+    <div class="name">${esc(watchModel(r)||"(no model)")}</div>
+    <dl class="wspec">${[["Dial",r.dial_color],["Movement",r.movement],["Case",[r.case_diameter&&String(r.case_diameter).replace(/\s*mm$/i,"")+"mm",r.case_material].filter(Boolean).join(" · ")],["Bracelet",[r.bracelet_material,r.bracelet_color].filter(Boolean).join(" · ")],["Gender",r.gender],["Condition",r.condition],["Box",r.box],["Papers",r.papers]]
+      .filter(([,v])=>v).map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
     <div class="row"><span class="dim">AC ${copyVal(r.ac,"AC number")}${copyBtn(r.ac,"AC number")}</span><span class="ev">${money2(r.ev)}</span></div>
-    ${facts?`<div class="facts">${facts}</div>`:""}
+    ${facts?`<dl class="wspec wfacts">${facts}</dl>`:""}
     ${r.moved&&S.phase==="review"?`<div class="pend">Moved ${dayOf(r.moved.at)} by ${esc(r.moved.by)}</div>`:""}
     <div class="tagchange">${change}</div>
   </button></div>`;
@@ -716,7 +721,7 @@ function showInfo(id){
   const W=S.cat==="watches", row=(k,v)=>v==null||v===""?"":`<dt>${k}</dt><dd>${v}</dd>`, on=S.selected.has(r.item_id);
   const canSel=S.phase==="review"&&!!r.item_id;
   const pic=W?PH_IMG(r.img):(!r.img&&isArena(r)?arenaSlab(r):PH_IMG(r.img));
-  const title=W?[r.brand,r.model].filter(Boolean).join(" "):r.player_name;
+  const title=W?[r.brand,watchModel(r)].filter(Boolean).join(" "):r.player_name;
   const sub=W?[r.reference&&"Ref "+r.reference,r.dial_color&&r.dial_color+" dial",r.movement,r.case_diameter&&r.case_diameter+"mm",r.case_material].filter(Boolean).map(esc).join(" · ")
              :[r.set_name,r.insert,r.parallel_name,r.parallel_total&&"/"+r.parallel_total].filter(Boolean).map(esc).join(" · ");
   const rows=W?[
@@ -877,9 +882,9 @@ $("#savedList").addEventListener("click",async e=>{
 
 
 /* Search by Tag (default): every word or comma-separated entry is a tag. Anything: the full ev-bot search. */
-let MODE="tag";
-const PHS={cards:{tag:"Tag, e.g. sd_wemby_grail · add a $ range: sd_wemby_grail $100-$250",any:"Player, set, order #1234567, po #4386, AC / cert, $100-$250"},
-  watches:{tag:"Tag, e.g. vookum · add a $ range: vookum $100-$250",any:"rolex datejust ref #16030 · order #20890796 · po #4439 · $100-$250"}};
+let MODE="any"; // one box: tags, names, numbers and $ ranges all work together
+const PHS={cards:{any:"sd_wemby_grail · wembanyama prizm · order #1234567 · po #4386 · $100-$250"},
+  watches:{any:"vookum · rolex · datejust ref #16030 · movement automatic · order #20890796 · $100-$250"}};
 const PH=new Proxy({}, {get:(_,k)=>PHS[typeof CAT==="undefined"?"cards":CAT][k]});
 let ONE="card", MANY="cards";
 document.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>{MODE=b.dataset.mode;
@@ -1082,7 +1087,7 @@ const pickCat=c=>{
   ONE=CAT==="cards"?"card":"watch"; MANY=CAT==="cards"?"cards":"watches";
   $("#srcWord").textContent=CAT==="cards"?"Cards:":"Watches:"; $("#findBtn").textContent=CAT==="cards"?"Find cards":"Find watches";
   if(ME&&!ME.dry_run) $("#modeBadge").textContent=`LIVE — moves ${MANY} in admin`;
-  $("#anyBtn").textContent=CAT==="cards"?"Anything (player, set, order, AC, cert)":"Anything (brand, model, reference, movement, PO, order, AC)";
+  $("#searchHint").textContent=CAT==="cards"?"Search anything: tag, player, set, order #, PO #, AC / cert, $100-$250":"Search anything: tag, brand, model, ref #, movement, dial, order #, PO #, AC, $100-$250";
   requestAnimationFrame(()=>{ // then swap the screen on the next frame
     $("#srcLabel").textContent=CAT==="cards"?"All warehouse cards · Metabase 4131, fresh every search":"Warehouse watches · Metabase 45046, fresh every search";
     $("#input").placeholder=CAT==="cards"?"Tag, e.g. sd_wemby_grail — several tags: separate with commas":PH[MODE];
