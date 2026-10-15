@@ -433,7 +433,7 @@ dialog .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
   <section id="tab-users" role="tabpanel" aria-labelledby="tabBtn-users" hidden><div id="usersBox"></div></section>
   <section id="tab-setup" role="tabpanel" aria-labelledby="tabBtn-setup" hidden><div id="setupBox"></div></section>
   <section id="tab-saved" role="tabpanel" aria-labelledby="tabBtn-saved" hidden><div id="savedList"></div></section>
-  <p class="dim small foot" id="foot">Selected cards are moved to the marketplace in Arena Club admin. Every move is logged.</p>
+  <p class="dim small foot" id="foot">Selected items are moved to the marketplace in Arena Club admin. Every move is logged.</p>
 </div>
 
 <div class="login" id="login" hidden>
@@ -1058,59 +1058,19 @@ function renderSetup(){
   $("#setupBox").innerHTML=`<div class="acct" style="display:block">
       <b>Setup check</b>
       <div class="small dim" style="margin:4px 0 10px">Checks Vercel env vars, Neon, Metabase, your admin login and the move call. Read-only — nothing is moved.
-        Enter a tag to confirm the bot finds its cards and sees them in the repack warehouse.</div>
+        Runs by itself when you open this tab. Optional: enter a tag to also check its cards in the warehouse.</div>
       <label class="small">Tag (optional)<input id="suTag" placeholder="sd_wemby_grail" size="40" style="display:block;margin:4px 0 8px"></label>
-      <button class="btn primary" type="button" id="suBtn">Run setup check</button>
+      <button class="btn primary" type="button" id="suBtn">Run again</button>
       <div id="suOut" style="margin-top:12px"></div>
     </div>`;
   $("#suBtn").onclick=async()=>{
     const o=$("#suOut"); o.innerHTML=`<span class="spin"></span>Checking…`;
     try{ const r=await api("setup-check",{tag:$("#suTag").value.trim()});
       o.innerHTML=`<div class="history tblwrap"><table><tr><th></th><th>check</th><th>result</th></tr>${r.checks.map(c=>`<tr><td>${c.ok?"✅":"❌"}</td><td><b>${esc(c.name)}</b></td><td style="white-space:normal">${esc(c.detail)}</td></tr>`).join("")}</table></div>
-        <div class="small" style="margin-top:8px">${r.ready?`<span class="link-own">✓ Everything checks out.</span>`:`<span style="color:var(--warn)">Fix the ❌ rows in Vercel → Settings → Environment Variables, then redeploy.</span>`}</div>`;
+        <div class="small" style="margin-top:8px">${r.ready?`<span class="link-own">✓ Everything checks out.</span>`:`<span style="color:var(--warn)">Send a screenshot of the ❌ rows and the fix will be sent back.</span>`}</div>`;
     }catch(e){ o.innerHTML=`<span style="color:var(--warn)">${esc(e.message)}</span>`; }
   };
-  // ---- pick the watches question: search Metabase by name, check it, use it (saved in the app, no Vercel change)
-  $("#setupBox").insertAdjacentHTML("beforeend",`<div class="acct" style="display:block">
-      <b>Find the watches question</b>
-      <div class="small dim" style="margin:4px 0 10px">Search your saved Metabase questions by name, click <b>Check</b> to see if it has what the bot needs, then <b>Use for watches</b>.
-        Or type the number from the question's URL (<code>/question/<b>1234</b>-…</code>).</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <input id="wqQ" placeholder="watch" value="watch" size="24">
-        <button class="btn" type="button" id="wqSearch">Search Metabase</button>
-        <span class="dim small">or #</span><input id="wqId" placeholder="1234" size="8" inputmode="numeric">
-        <button class="btn" type="button" id="wqCheckId">Check</button>
-      </div>
-      <div id="wqOut" style="margin-top:12px"></div>
-    </div>`);
-  const wqOut=$("#wqOut");
-  const check=async(id,save)=>{
-    wqOut.innerHTML=`<span class="spin"></span>Running question ${esc(id)}…`;
-    try{
-      const r=await api("watch-question",{id:String(id),save});
-      const row=(ok,t)=>`<tr><td>${ok?"✅":"❌"}</td><td style="white-space:normal">${t}</td></tr>`;
-      const okAll=r.ids_found>0&&r.has_watch_fields.length>=2;
-      wqOut.innerHTML=`<div class="small" style="margin-bottom:6px">Question <b>#${r.id}</b> · ${r.rows.toLocaleString()} rows${r.saved?` · <span class="link-own">✓ now used for watches</span>`:""}</div>
-        <div class="history tblwrap"><table>
-        ${row(r.ids_found>0,r.has_item_id?`ITEM_ID column — ${r.ids_found} of ${r.rows} rows have an ID`:r.ids_found?`No ITEM_ID column, but ${r.ids_found} IDs were read from ITEM_URL`:`<b>No item ID</b> — add <code>i.ID AS ITEM_ID</code> (public.items.id) to the SQL. ITEM_TYPE_ID is the watch type, not the item.`)}
-        ${row(r.has_watch_fields.length>=2,`Watch details: ${r.has_watch_fields.join(", ")||"none (BRAND_NAME, MODEL, REFERENCE)"}`)}
-        ${row(r.has_image,r.has_image?"IMAGE_URL — photos will show":"No IMAGE_URL — tiles show ⌚")}
-        ${row(r.has_tag,r.has_tag?"TAG — tag search works":"No TAG column")}
-        ${row(!!r.status_col,r.status_col?`${esc(r.status_col)} — rejected are hidden · values: ${esc(r.statuses.join(", ")||"—")}`:"No status column — rejected watches can't be hidden")}
-        </table></div>
-        ${r.saved?"":`<button class="btn ${okAll?"primary":""}" type="button" id="wqUse" style="margin-top:10px">Use #${r.id} for watches</button>`}`;
-      const u=$("#wqUse"); if(u) u.onclick=()=>check(r.id,true);
-    }catch(e){ wqOut.innerHTML=`<span style="color:var(--warn)">${esc(e.message)}</span>`; }
-  };
-  $("#wqCheckId").onclick=()=>check($("#wqId").value.trim(),false);
-  $("#wqSearch").onclick=async()=>{
-    wqOut.innerHTML=`<span class="spin"></span>Searching…`;
-    try{ const r=await api("mb-search",{q:$("#wqQ").value.trim()});
-      wqOut.innerHTML=(r.current?`<div class="small" style="margin-bottom:6px">Watches use question <b>#${r.current}</b> now.</div>`:"")+
-        (r.results.length?`<div class="history tblwrap"><table><tr><th>#</th><th>question</th><th>collection</th><th></th></tr>${r.results.map(x=>`<tr><td>${x.id}</td><td style="white-space:normal">${esc(x.name)}</td><td class="dim">${esc(x.collection)}</td><td><button class="btn" type="button" data-wq="${x.id}">Check</button></td></tr>`).join("")}</table></div>`:`<span class="dim small">No saved questions match. Save the watches SQL as a question first, then search again.</span>`);
-      wqOut.querySelectorAll("[data-wq]").forEach(b=>b.onclick=()=>check(b.dataset.wq,false));
-    }catch(e){ wqOut.innerHTML=`<span style="color:var(--warn)">${esc(e.message)}</span>`; }
-  };
+  $("#suBtn").click(); // nothing to fill in — check right away
 }
 /* ---------- Cards / Watches switch ---------- */
 let CAT="cards";
@@ -1124,7 +1084,7 @@ const pickCat=c=>{
   if(ME&&!ME.dry_run) $("#modeBadge").textContent=`LIVE — moves ${MANY} in admin`;
   $("#anyBtn").textContent=CAT==="cards"?"Anything (player, set, order, AC, cert)":"Anything (brand, model, reference, movement, PO, order, AC)";
   requestAnimationFrame(()=>{ // then swap the screen on the next frame
-    $("#srcLabel").textContent=CAT==="cards"?"All warehouse cards · Metabase 4131, fresh every search":"Warehouse watches · Metabase, fresh every search";
+    $("#srcLabel").textContent=CAT==="cards"?"All warehouse cards · Metabase 4131, fresh every search":"Warehouse watches · Metabase 45046, fresh every search";
     $("#input").placeholder=CAT==="cards"?"Tag, e.g. sd_wemby_grail — several tags: separate with commas":PH[MODE];
     findSeq++; S=null; $("#summary").innerHTML=""; $("#grid").innerHTML=""; $("#empty").hidden=false; $("#empty").innerHTML=EMPTY_HELP; $("#bar").hidden=true; $("#input").value=""; renderBands();
   });

@@ -3,6 +3,7 @@
 import { config } from "./config";
 import { q } from "./db";
 import { mb, queryCards } from "./metabase";
+import { inspectWatchQuestion } from "./watches";
 import { openAdminSession, headers, url } from "./admin";
 import { mmConfig } from "./market";
 import { watchCardId } from "./settings";
@@ -52,9 +53,13 @@ export async function setupCheck(adminUserId: string, tag?: string) {
   const wid = await watchCardId().catch(() => 0);
   if (!wid) checks.push({ name: "Watches question", ok: false, detail: "Not picked yet — use “Find the watches question” below" });
   else try {
-    const r = await mb(`/api/card/${wid}`); const j = r.ok ? await r.json() : null;
-    checks.push({ name: `Watches question ${wid}`, ok: r.ok, detail: r.ok ? `Reachable · “${j?.name ?? "?"}” · moves send ${mmConfig("watches").method} ${url(mmConfig("watches").path, "<WATCH_ID>")}` : `HTTP ${r.status}` });
-  } catch (e) { checks.push({ name: `Watches question ${wid}`, ok: false, detail: errMsg(e) }); }
+    const w = await inspectWatchQuestion(wid);
+    checks.push({ name: `Watches · Metabase ${wid}`, ok: w.rows > 0, detail: `${w.rows.toLocaleString()} watches · ${w.has_watch_fields.join(", ") || "no brand/model/reference columns"}${w.has_image ? " · photos" : " · no IMAGE_URL"}` });
+    checks.push({ name: "Watches · item IDs", ok: w.ids_found > 0,
+      detail: w.ids_found ? `${w.ids_found.toLocaleString()} of ${w.rows.toLocaleString()} have an ID${w.has_item_id ? "" : " (read from ITEM_URL)"} · moves send DELETE …/repacks/warehouse/watch_<ID>`
+        : "No item ID in 45046 — add i.ID AS ITEM_ID (public.items.id) to its SQL. ITEM_TYPE_ID is the watch type, not the watch." });
+    checks.push({ name: "Watches · hide rejected", ok: !!w.status_col, detail: w.status_col ? `${w.status_col} · values: ${w.statuses.join(", ") || "—"}` : "No status column in 45046 — rejected watches can't be hidden" });
+  } catch (e) { checks.push({ name: `Watches · Metabase ${wid}`, ok: false, detail: errMsg(e) }); }
   const m = mmConfig();
   checks.push({ name: "Move call", ok: !!m.path, detail: `${m.method} ${url(m.path, sampleId || "<ITEM_ID>")}` });
   checks.push({ name: "Mode", ok: true, detail: config.dryRun() ? "DRY_RUN=true — moves are logged, nothing is sent. Set DRY_RUN=false to go live." : "LIVE — moves are sent to admin" });

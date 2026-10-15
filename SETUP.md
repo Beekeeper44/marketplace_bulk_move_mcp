@@ -51,8 +51,8 @@ env vars · Neon · Metabase 4131 · admin login (repack warehouse) · the tag's
 3. Move 1–2 cards, check them on the marketplace in admin. Run the same search again — they show "Moved … by …" and start unselected.
 
 ## 6b. Watches
-1. Save the watches SQL as a Metabase question. It needs `ITEM_ID` (= `public.items.id`, not ITEM_TYPE_ID) and ideally a status column (`ITEM_STATUS` / `STATUS`) so rejected watches are hidden.
-2. App → **Setup** tab → **Find the watches question** → **Search Metabase** (e.g. "watch") → **Check** → **Use for watches**. Saved in the app — no Vercel change. (`WATCH_CARD_ID` in Vercel still works and wins.)
+1. Watches use Metabase question **45046** (built in). It needs `ITEM_ID` (= `public.items.id`, not ITEM_TYPE_ID) and ideally a status column (`ITEM_STATUS` / `STATUS`) so rejected watches are hidden.
+2. To check it: **Setup** tab → **Find the watches question** → type `45046` → **Check**. To switch questions later, **Use for watches** (saved in the app) or set `WATCH_CARD_ID` in Vercel.
 3. Moves send `DELETE /admin/v1/repacks/warehouse/watch_<ITEM_ID>` (confirmed from admin's Timebox warehouse).
 4. Click **Watches** → Tag `vookum`, or **Anything** → `rolex datejust ref #16030`. Dry run first.
 
