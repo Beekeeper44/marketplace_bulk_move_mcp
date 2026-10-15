@@ -2,7 +2,7 @@
 // Read-only — nothing here writes to admin.
 import { config } from "./config";
 import { q } from "./db";
-import { mb } from "./metabase";
+import { mb, queryCards } from "./metabase";
 import { openAdminSession, headers, url } from "./admin";
 import { mmConfig } from "./market";
 
@@ -10,7 +10,7 @@ type Check = { name: string; ok: boolean; detail: string };
 const REQUIRED = ["SESSION_SECRET", "METABASE_HOST", "METABASE_API_KEY", "SUPERTOKENS_CONNECTION_URI", "SUPERTOKENS_API_KEY", "ADMIN_SESSION_USER_ID", "DATABASE_URL"];
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 200);
 
-export async function setupCheck(adminUserId: string, itemId?: string) {
+export async function setupCheck(adminUserId: string, tag?: string) {
   const checks: Check[] = [];
   const missing = REQUIRED.filter((k) => !process.env[k]);
   checks.push({ name: "Vercel env vars", ok: !missing.length, detail: missing.length ? `Missing: ${missing.join(", ")}` : "All required vars are set" });
@@ -25,21 +25,28 @@ export async function setupCheck(adminUserId: string, itemId?: string) {
   } catch (e) { checks.push({ name: `Metabase question ${config.metabaseCardId()}`, ok: false, detail: errMsg(e) }); }
 
   let inWarehouse: boolean | null = null;
+  let sampleId: string | undefined;
   try {
     const s = await openAdminSession(adminUserId);
     try {
       const r = await fetch(url("/admin/v1/repacks/warehouse?category=card&limit=1"), { headers: headers(s.accessToken) });
       checks.push({ name: "Admin login (repack warehouse)", ok: r.ok, detail: r.ok ? "Admin accepts your login for the repack warehouse" : `HTTP ${r.status} ${(await r.text()).slice(0, 120)}` });
-      if (itemId) {
-        const c = await fetch(url("/admin/v1/repacks/warehouse/card_{id}", itemId.trim()), { headers: headers(s.accessToken) });
-        inWarehouse = c.ok ? true : c.status === 404 ? false : null;
-        checks.push({ name: `Card ${itemId.trim()}`, ok: c.ok, detail: c.ok ? "In the repack warehouse — the bot can move it" : c.status === 404 ? "Not in the repack warehouse (already on the marketplace, or a different ID)" : `HTTP ${c.status}` });
+      if (tag) {
+        // the tag's cards from 4131, then the first few checked in admin's repack warehouse
+        const rows = await queryCards({ tag: tag.trim() });
+        const sample = rows.slice(0, 5);
+        const hits = await Promise.all(sample.map(async (c) => (await fetch(url("/admin/v1/repacks/warehouse/card_{id}", c.item_id), { headers: headers(s.accessToken) })).ok));
+        const inN = hits.filter(Boolean).length;
+        inWarehouse = sample.length ? inN > 0 : null;
+        checks.push({ name: `Tag ${tag.trim()}`, ok: rows.length > 0 && inN > 0,
+          detail: !rows.length ? "No cards with this tag in 4131 — check the spelling" : `${rows.length} cards in 4131 · ${inN} of the first ${sample.length} are in the repack warehouse (the rest are already on the marketplace)` });
+        sampleId = sample[0]?.item_id;
       }
     } finally { await s.revoke(); }
   } catch (e) { checks.push({ name: "Admin login (repack warehouse)", ok: false, detail: errMsg(e) }); }
 
   const m = mmConfig();
-  checks.push({ name: "Move call", ok: !!m.path, detail: `${m.method} ${url(m.path, itemId?.trim() || "<ITEM_ID>")}` });
+  checks.push({ name: "Move call", ok: !!m.path, detail: `${m.method} ${url(m.path, sampleId || "<ITEM_ID>")}` });
   checks.push({ name: "Mode", ok: true, detail: config.dryRun() ? "DRY_RUN=true — moves are logged, nothing is sent. Set DRY_RUN=false to go live." : "LIVE — moves are sent to admin" });
   return { checks, in_warehouse: inWarehouse, ready: checks.every((c) => c.ok) };
 }

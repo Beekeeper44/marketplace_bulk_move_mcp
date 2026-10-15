@@ -42,11 +42,11 @@ Open the Vercel URL and sign in with your ev-bot email + password.
 (New database: enter name, email, password and the `SETUP_CODE`, then delete `SETUP_CODE` in Vercel.)
 
 ## 5. Run the Setup check (in the app)
-**Setup** tab → paste an ITEM_ID (⧉ next to "ID" on any tile) → **Run setup check**. Every row should be ✅:
-env vars · Neon · Metabase 4131 · admin login (repack warehouse) · the card is in the repack warehouse · the move call.
+**Setup** tab → type a tag (e.g. `sd_wemby_grail`) → **Run setup check**. Every row should be ✅:
+env vars · Neon · Metabase 4131 · admin login (repack warehouse) · the tag's cards are found and in the repack warehouse · the move call.
 
 ## 6. Dry run, then go live
-1. **Move cards** tab → search e.g. `tag sd_wemby_grail` → select 1 card → **Move to Marketplace** → the result shows the exact DELETE it would send.
+1. **Move cards** tab → **Search by: Tag** → type `sd_wemby_grail` → Enter → select 1 card → **Move to Marketplace** → the result shows the exact DELETE it would send.
 2. Vercel → Settings → Environment Variables → `DRY_RUN` = `false` → **Deployments → ⋯ → Redeploy**.
 3. Move 1–2 cards, check them on the marketplace in admin. Run the same search again — they show "Moved … by …" and start unselected.
 

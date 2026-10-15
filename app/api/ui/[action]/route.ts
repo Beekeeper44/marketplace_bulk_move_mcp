@@ -196,7 +196,7 @@ export async function POST(req: Request, ctx: Ctx) {
         // Move to Marketplace — the only admin write in this app
         return forbid(u, "editor") ?? json(await moveCards({ items: (Array.isArray(body.items) ? body.items : []) as MoveItem[], actor: actorOf(u), dry_run: body.dry_run === true }));
       case "setup-check":
-        return forbid(u, "admin") ?? json(await setupCheck(actorOf(u).session_user_id, str("item_id") || undefined));
+        return forbid(u, "admin") ?? json(await setupCheck(actorOf(u).session_user_id, str("tag").replace(/^tag\s+/i, "").replace(/^#/, "") || undefined));
       case "probe":
         // setup check: shows the exact call a move would send for one card (sends nothing)
         return forbid(u, "admin") ?? json(probeMove(str("item_id"), body.ev == null ? null : Number(body.ev)));
